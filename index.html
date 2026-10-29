@@ -1,0 +1,55 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Attendance Register – Signature Staff</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f4f4f4;color:#111}
+header{background:#111;color:#ffd400;padding:14px 16px;font-weight:700;font-size:18px}
+main{max-width:640px;margin:0 auto;padding:12px}
+.card{background:#fff;border-radius:10px;padding:12px;margin-bottom:10px;box-shadow:0 1px 3px #0002}
+.m{color:#555;font-size:14px}.w{border-top:1px solid #eee;padding:10px 0}.w:first-child{border:0}
+.n{font-weight:600;margin-bottom:6px}.b{display:flex;gap:6px}
+.b button{flex:1;padding:12px 0;border:2px solid #ccc;border-radius:8px;background:#fff;font-size:15px;font-weight:600}
+.b .h.on{background:#1a8f3a;border-color:#1a8f3a;color:#fff}.b .l.on{background:#e6a100;border-color:#e6a100;color:#fff}.b .a.on{background:#c62828;border-color:#c62828;color:#fff}
+input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:16px;margin-top:6px}
+.big{width:100%;padding:16px;font-size:18px;font-weight:700;border:0;border-radius:10px;background:#111;color:#ffd400}
+.all{background:#1a8f3a;color:#fff;margin-bottom:10px}.err{color:#c62828;font-weight:600}
+.tally{position:sticky;top:0;background:#fff;padding:8px 12px;border-radius:8px;margin-bottom:8px;box-shadow:0 1px 3px #0002;font-size:14px}
+</style></head><body><header>Signature Staff · Attendance Register</header><main id="app"></main>
+<script>
+const ENDPOINT="https://formsubmit.co/ajax/temp@signaturestaff.com.au";
+const $=s=>document.querySelector(s),app=$("#app");
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let S;
+try{let h=location.hash.slice(1).replace(/-/g,"+").replace(/_/g,"/");h+="===".slice((h.length+3)%4);
+ S=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(h),c=>c.charCodeAt(0))))}catch(e){S=null}
+if(!S||!Array.isArray(S.w)){app.innerHTML='<div class="card"><b>This link is incomplete.</b><p class="m">Please contact Signature Staff on the number that sent it.</p></div>'}
+else{
+ const test=!!S.test,st=S.w.map(()=>"");
+ const done=localStorage.getItem("reg:sent:"+S.i);
+ app.innerHTML=(test?'<div class="card err">TEST – this is a test register</div>':'')+
+ '<div class="card"><b>'+esc(S.c)+'</b><div>'+esc(S.v)+'</div><div class="m">'+esc(S.r)+' · '+esc(S.d)+' · '+esc(S.t)+'</div><div class="m">Shift '+esc(S.i)+'</div>'+
+ (done?'<p class="err">Already sent from this phone at '+esc(done)+'. Sending again will send an update.</p>':'')+'</div>'+
+ '<div class="tally" id="tal"></div><button class="big all" id="all">✔ Everyone here</button>'+
+ '<div class="card" id="ws">'+S.w.map((n,i)=>'<div class="w"><div class="n">'+(i+1)+'. '+esc(n)+'</div><div class="b"><button class="h" data-i="'+i+'" data-s="Here">Here</button><button class="l" data-i="'+i+'" data-s="Late">Late</button><button class="a" data-i="'+i+'" data-s="Absent">Absent</button></div><input id="c'+i+'" placeholder="Comment (optional)"></div>').join("")+'</div>'+
+ '<div class="card"><label><b>Supervisor name *</b><input id="sup" autocomplete="name"></label><label class="m">General comments<textarea id="gen" rows="2"></textarea></label></div>'+
+ '<p id="msg" class="err"></p><button class="big" id="send">Send</button><p class="m">Goes to Signature Staff, temp@signaturestaff.com.au</p>';
+ const tally=()=>{const c=k=>st.filter(x=>x===k).length;$("#tal").innerHTML='Here <b>'+c("Here")+'</b> · Late <b>'+c("Late")+'</b> · Absent <b>'+c("Absent")+'</b> · Not marked <b>'+c("")+'</b> of '+S.w.length};
+ const paint=i=>document.querySelectorAll('[data-i="'+i+'"]').forEach(b=>b.classList.toggle("on",b.dataset.s===st[i]));
+ $("#ws").onclick=e=>{const b=e.target.closest("button");if(!b)return;const i=+b.dataset.i;st[i]=st[i]===b.dataset.s?"":b.dataset.s;paint(i);tally()};
+ $("#all").onclick=()=>{st.forEach((x,i)=>{st[i]="Here";paint(i)});tally()};tally();
+ $("#send").onclick=async()=>{const sup=$("#sup").value.trim(),un=st.filter(x=>!x).length;
+  if(!sup){$("#msg").textContent="Please enter the supervisor name.";$("#sup").focus();return}
+  if(un&&!confirm(un+" worker(s) not marked. Send anyway?"))return;
+  const lines=S.w.map((n,i)=>(i+1)+". "+n+" – "+(st[i]||"NOT MARKED")+($("#c"+i).value.trim()?" – "+$("#c"+i).value.trim():""));
+  const cnt=k=>st.filter(x=>x===k).length,T=test?"TEST – ":"";
+  const body={_subject:T+"Attendance register: "+S.c+" – "+S.v+" – "+S.d+" "+S.t+" ("+cnt("Here")+" here, "+cnt("Late")+" late, "+cnt("Absent")+" absent"+(un?", "+un+" unmarked":"")+")",
+   _template:"box",_captcha:"false",Test:test?"YES – TEST SUBMISSION, ignore":"no","Shift ID":S.i,Client:S.c,Venue:S.v,Role:S.r,"Shift date":S.d,"Shift time":S.t,
+   Summary:"Here "+cnt("Here")+", Late "+cnt("Late")+", Absent "+cnt("Absent")+", Not marked "+un+" (of "+S.w.length+")",
+   Workers:lines.join("\n"),"Supervisor name":sup,"General comments":$("#gen").value.trim()||"-","Submitted at":new Date().toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})+" AEST"};
+  $("#send").disabled=true;$("#send").textContent="Sending…";$("#msg").textContent="";
+  try{const r=await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify(body)});
+   const j=await r.json().catch(()=>({}));if(!r.ok||String(j.success)==="false")throw new Error(j.message||r.status);
+   localStorage.setItem("reg:sent:"+S.i,body["Submitted at"]);
+   app.innerHTML='<div class="card" style="text-align:center"><h2>✔ Thank you, '+esc(sup)+'!</h2><p>The attendance register for '+esc(S.v)+' ('+esc(S.d)+') has been sent to Signature Staff.</p><p class="m">'+esc(body.Summary)+'</p></div>'}
+  catch(e){$("#send").disabled=false;$("#send").textContent="Send";$("#msg").textContent="Couldn't send ("+e.message+"). Check signal and try again, or text Signature Staff."}};
+}
+</script></body></html>
