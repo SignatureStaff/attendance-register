@@ -15,7 +15,9 @@ input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid #c
 .tally{position:sticky;top:0;background:#fff;padding:8px 12px;border-radius:8px;margin-bottom:8px;box-shadow:0 1px 3px #0002;font-size:14px}
 </style></head><body><header>Signature Staff · Attendance Register</header><main id="app"></main>
 <script>
+const APPS_SCRIPT_URL="";// paste Google Apps Script web app URL here
 const ENDPOINT="https://formsubmit.co/ajax/9b9a8b5f53ea86a1da3ec01dcf13f4d3";
+const TOKEN="ssreg-2026",OFFICE_EMAIL="temp@signaturestaff.com.au",OFFICE_SMS="+61418533357";
 const $=s=>document.querySelector(s),app=$("#app");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let S;
@@ -23,7 +25,8 @@ try{let h=location.hash.slice(1).replace(/-/g,"+").replace(/_/g,"/");h+="===".sl
  S=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(h),c=>c.charCodeAt(0))))}catch(e){S=null}
 if(!S||!Array.isArray(S.w)){app.innerHTML='<div class="card"><b>This link is incomplete.</b><p class="m">Please contact Signature Staff on the number that sent it.</p></div>'}
 else{
- const test=!!S.test,st=S.w.map(()=>"");
+ const test=!!S.test,KEY="reg:state:"+S.i;let sv={};try{sv=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){}
+ const st=S.w.map((_,i)=>(sv.st&&sv.st[i])||"");
  const done=localStorage.getItem("reg:sent:"+S.i);
  app.innerHTML=(test?'<div class="card err">TEST – this is a test register</div>':'')+
  '<div class="card"><b>'+esc(S.c)+'</b><div>'+esc(S.v)+'</div><div class="m">'+esc(S.r)+' · '+esc(S.d)+' · '+esc(S.t)+'</div><div class="m">Shift '+esc(S.i)+'</div>'+
@@ -36,20 +39,45 @@ else{
  const paint=i=>document.querySelectorAll('[data-i="'+i+'"]').forEach(b=>b.classList.toggle("on",b.dataset.s===st[i]));
  $("#ws").onclick=e=>{const b=e.target.closest("button");if(!b)return;const i=+b.dataset.i;st[i]=st[i]===b.dataset.s?"":b.dataset.s;paint(i);tally()};
  $("#all").onclick=()=>{st.forEach((x,i)=>{st[i]="Here";paint(i)});tally()};tally();
+ S.w.forEach((_,i)=>{$("#c"+i).value=(sv.c&&sv.c[i])||"";paint(i)});$("#sup").value=sv.sup||"";$("#gen").value=sv.gen||"";
+ const save=()=>{try{localStorage.setItem(KEY,JSON.stringify({st,c:S.w.map((_,i)=>$("#c"+i).value),sup:$("#sup").value,gen:$("#gen").value}))}catch(e){}};
+ app.addEventListener("input",save);app.addEventListener("click",()=>setTimeout(save,0));
+ const sid=()=>{let s=localStorage.getItem(KEY+":sid");if(!s){s=Date.now().toString(36)+Math.random().toString(36).slice(2,10);localStorage.setItem(KEY+":sid",s)}return s};
+ const tfetch=(u,o,ms)=>{const ac=new AbortController(),t=setTimeout(()=>ac.abort(),ms);return fetch(u,{...o,signal:ac.signal}).finally(()=>clearTimeout(t))};
+ const viaGAS=async p=>{let last;for(let a=0;a<2;a++){try{const r=await tfetch(APPS_SCRIPT_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(p),redirect:"follow"},12000);
+   const j=await r.json();if(j.ok)return;last=new Error(j.error||"error")}catch(e){last=e}}throw last};
+ const viaFS=async b=>{const r=await tfetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify(b)},12000);
+   const j=await r.json().catch(()=>({}));if(!r.ok||String(j.success)==="false")throw new Error(j.message||r.status)};
  $("#send").onclick=async()=>{const sup=$("#sup").value.trim(),un=st.filter(x=>!x).length;
   if(!sup){$("#msg").textContent="Please enter the supervisor name.";$("#sup").focus();return}
   if(un&&!confirm(un+" worker(s) not marked. Send anyway?"))return;
-  const lines=S.w.map((n,i)=>(i+1)+". "+n+" – "+(st[i]||"NOT MARKED")+($("#c"+i).value.trim()?" – "+$("#c"+i).value.trim():""));
-  const cnt=k=>st.filter(x=>x===k).length,T=test?"TEST – ":"";
-  const body={_subject:T+"Attendance register: "+S.c+" – "+S.v+" – "+S.d+" "+S.t+" ("+cnt("Here")+" here, "+cnt("Late")+" late, "+cnt("Absent")+" absent"+(un?", "+un+" unmarked":"")+")",
-   _template:"box",_captcha:"false",Test:test?"YES – TEST SUBMISSION, ignore":"no","Shift ID":S.i,Client:S.c,Venue:S.v,Role:S.r,"Shift date":S.d,"Shift time":S.t,
-   Summary:"Here "+cnt("Here")+", Late "+cnt("Late")+", Absent "+cnt("Absent")+", Not marked "+un+" (of "+S.w.length+")",
-   Workers:lines.join("\n"),"Supervisor name":sup,"General comments":$("#gen").value.trim()||"-","Submitted at":new Date().toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})+" AEST"};
-  $("#send").disabled=true;$("#send").textContent="Sending…";$("#msg").textContent="";
-  try{const r=await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify(body)});
-   const j=await r.json().catch(()=>({}));if(!r.ok||String(j.success)==="false")throw new Error(j.message||r.status);
-   localStorage.setItem("reg:sent:"+S.i,body["Submitted at"]);
-   app.innerHTML='<div class="card" style="text-align:center"><h2>✔ Thank you, '+esc(sup)+'!</h2><p>The attendance register for '+esc(S.v)+' ('+esc(S.d)+') has been sent to Signature Staff.</p><p class="m">'+esc(body.Summary)+'</p></div>'}
-  catch(e){$("#send").disabled=false;$("#send").textContent="Send";$("#msg").textContent="Couldn't send ("+e.message+"). Check signal and try again, or text Signature Staff."}};
+  save();const cm=S.w.map((_,i)=>$("#c"+i).value.trim()),gen=$("#gen").value.trim();
+  const lines=S.w.map((n,i)=>(i+1)+". "+n+" – "+(st[i]||"NOT MARKED")+(cm[i]?" – "+cm[i]:""));
+  const cnt=k=>st.filter(x=>x===k).length,T=test?"TEST – ":"",now=new Date().toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})+" AEST";
+  const subj=T+"Attendance register: "+S.c+" – "+S.v+" – "+S.d+" "+S.t+" ("+cnt("Here")+" here, "+cnt("Late")+" late, "+cnt("Absent")+" absent"+(un?", "+un+" unmarked":"")+")";
+  const summary="Here "+cnt("Here")+", Late "+cnt("Late")+", Absent "+cnt("Absent")+", Not marked "+un+" (of "+S.w.length+")";
+  const body={_subject:subj,_template:"box",_captcha:"false",Test:test?"YES – TEST SUBMISSION, ignore":"no","Shift ID":S.i,Client:S.c,Venue:S.v,Role:S.r,"Shift date":S.d,"Shift time":S.t,
+   Summary:summary,Workers:lines.join("\n"),"Supervisor name":sup,"General comments":gen||"-","Submitted at":now};
+  const gp={token:TOKEN,submissionId:sid(),client:(test?"TEST – ":"")+S.c,site:S.v,role:S.r,date:S.d,time:S.t,shift:S.i,supervisor:sup,comments:gen,test:test,submittedAt:now,
+   workers:S.w.map((n,i)=>({name:n,status:st[i]||"",comment:cm[i]}))};
+  $("#send").disabled=true;$("#send").textContent="Sending…";$("#msg").textContent="";$("#fb")&&$("#fb").remove();
+  let ok=false,err="";
+  if(APPS_SCRIPT_URL){try{await viaGAS(gp);ok=true}catch(e){err=e.message||String(e)}}
+  if(!ok){try{await viaFS(body);ok=true}catch(e){err=e.name==="AbortError"?"timed out":(e.message||String(e))}}
+  if(ok){localStorage.setItem("reg:sent:"+S.i,now);localStorage.removeItem(KEY+":sid");
+   app.innerHTML='<div class="card" style="text-align:center"><h2>✔ Thank you, '+esc(sup)+'!</h2><p>The attendance register for '+esc(S.v)+' ('+esc(S.d)+') has been sent to Signature Staff.</p><p class="m">'+esc(summary)+'</p><p class="m">Sent '+esc(now)+'</p></div>';return}
+  $("#send").disabled=false;$("#send").textContent="Try again";
+  $("#msg").textContent="Couldn't send online ("+err+"). Your markings are saved on this phone. Please use a button below so Signature Staff still gets it.";
+  const head=T+"ATTENDANCE REGISTER\n"+S.c+" – "+S.v+"\n"+S.r+" · "+S.d+" · "+S.t+"\nShift "+S.i+"\n"+summary+"\nSupervisor: "+sup+"\n\n";
+  const mk=(max)=>{let ws=lines.slice(),g=gen;let t=()=>head+ws.join("\n")+(g?"\n\nComments: "+g:"");
+   if(t().length>max)g=g.slice(0,150)+(g.length>150?"…":"");
+   if(t().length>max)ws=S.w.map((n,i)=>(i+1)+". "+n+" – "+(st[i]||"NOT MARKED")+(cm[i]?" – "+cm[i].slice(0,40)+(cm[i].length>40?"…":""):""));
+   if(t().length>max)ws=S.w.map((n,i)=>(i+1)+". "+n+" – "+(st[i]||"NOT MARKED"));
+   let s=t();return s.length>max?s.slice(0,max-1)+"…":s};
+  let txt=mk(1800);while(encodeURIComponent(txt).length>6000&&txt.length>300)txt=mk(txt.length-200);
+  const fb=document.createElement("div");fb.id="fb";
+  fb.innerHTML='<a class="big" id="fbmail" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box;margin-bottom:10px;background:#1a8f3a;color:#fff" href="mailto:'+OFFICE_EMAIL+'?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(txt)+'">✉ Send by email</a>'+
+   (OFFICE_SMS?'<a class="big" id="fbsms" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box;margin-bottom:10px" href="sms:'+OFFICE_SMS+'?&body='+encodeURIComponent(txt)+'">💬 Send by text</a>':'');
+  $("#msg").after(fb)};
 }
 </script></body></html>
